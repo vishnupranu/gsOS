@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>structure</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+    pre { background: #1e1e1e; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+    code { font-family: monospace; }
+  </style>
+</head>
+<body>
+<p># Project Structure</p><p></p><p>## Directory Layout</p><p></p><pre><code class="language-"><p>.</p><p>├── apps/                    # Application packages</p><p>│   └── (future apps)</p><p>├── packages/                # Shared library packages</p><p>│   └── config/              # Configuration packages</p><p>│       ├── eslint-config/   # ESLint configuration</p><p>│       └── tsconfig/        # TypeScript configurations</p><p>├── docs/                    # Documentation site</p><p>│   ├── src/                 # Source files</p><p>│   │   └── *.md            # Markdown documentation</p><p>│   ├── package.json</p><p>│   └── build.js             # Documentation builder</p><p>├── package.json             # Root package</p><p>├── pnpm-workspace.yaml      # pnpm workspace config</p><p>└── README.md                # This file</p><pre><code class="language-"><p></p><p>## Package Naming Convention</p><p></p><p>- **Apps**: `@monorepo/<app-name>`</p><p>- **Packages**: `@monorepo/<package-name>`</p><p>- **Config**: `@monorepo/<config-name>`</p><p></p><p>## Adding a New Package</p><p></p><p>1. Create the directory under `packages/` or `apps/`</p><p>2. Add a `package.json` with appropriate name and scripts</p><p>3. Add the package to `pnpm-workspace.yaml` if needed</p><p>4. Reference shared configs from `packages/config/`</p><p></p><p>## Adding Documentation</p><p></p><p>1. Create a `.md` file in `docs/src/`</p><p>2. Run `pnpm build` to generate HTML</p><p>3. Output appears in `docs/dist/`</p>
+</body>
+</html>

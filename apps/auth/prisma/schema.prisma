@@ -1,0 +1,215 @@
+// Prisma Schema for Authentication System
+// Supports: Google OAuth, GitHub OAuth, Email/Password, Organizations, RBAC, Audit Logs
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION MODELS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // Hashed, for email/password auth
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Auth relations
+  accounts Account[]
+  sessions Session[]
+
+  // Application relations
+  memberships           Membership[]
+  auditLogs             AuditLog[]
+  organizationUserRoles OrganizationUserRole[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// ORGANIZATION MODELS
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships           Membership[]
+  invitations           Invitation[]
+  auditLogs             AuditLog[]
+  organizationRoles     OrganizationRole[]
+  organizationUserRoles OrganizationUserRole[]
+
+  @@index([slug])
+  @@map("organizations")
+}
+
+// MembershipRole is stored as String: "OWNER" | "ADMIN" | "MEMBER" | "GUEST"
+
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String   @default("GUEST") // "OWNER" | "ADMIN" | "MEMBER" | "GUEST"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  organizationId String
+  role           String   @default("GUEST") // "OWNER" | "ADMIN" | "MEMBER" | "GUEST"
+  token          String   @unique
+  expires        DateTime
+  createdAt      DateTime @default(now())
+  acceptedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([token])
+  @@map("invitations")
+}
+
+// ============================================
+// RBAC / PERMISSIONS MODELS
+// ============================================
+
+// Organization-level roles with permissions
+model OrganizationRole {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String // e.g., "Developer", "Viewer"
+  description    String?
+  permissions    String   // JSON array of permission strings
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userRoles    OrganizationUserRole[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("organization_roles")
+}
+
+model OrganizationUserRole {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  roleId         String
+  createdAt      DateTime @default(now())
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         OrganizationRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId, roleId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_user_roles")
+}
+
+// ============================================
+// AUDIT LOG MODELS
+// ============================================
+
+// AuditAction stored as String:
+// "LOGIN" | "LOGOUT" | "LOGIN_FAILED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET_COMPLETED" |
+// "EMAIL_VERIFIED" | "USER_CREATED" | "USER_UPDATED" | "USER_DELETED" |
+// "ORG_CREATED" | "ORG_UPDATED" | "ORG_DELETED" |
+// "MEMBER_ADDED" | "MEMBER_REMOVED" | "MEMBER_ROLE_CHANGED" |
+// "INVITATION_SENT" | "INVITATION_ACCEPTED" | "INVITATION_REVOKED" |
+// "PERMISSION_GRANTED" | "PERMISSION_REVOKED" | "ROLE_CREATED" | "ROLE_UPDATED" | "ROLE_DELETED" |
+// "SETTINGS_UPDATED" | "OAUTH_CONNECTED" | "OAUTH_DISCONNECTED" | "CUSTOM"
+
+model AuditLog {
+  id             String    @id @default(cuid())
+  timestamp      DateTime  @default(now())
+  action         String    // AuditAction enum values
+  userId         String?
+  organizationId String?
+  ipAddress      String?
+  userAgent      String?
+  resourceType   String?
+  resourceId     String?
+  metadata       String?   // JSON string
+  changes        String?   // JSON string with before/after
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([timestamp])
+  @@index([action])
+  @@map("audit_logs")
+}
