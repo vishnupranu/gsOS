@@ -8,6 +8,26 @@ import { PrismaClient } from '@prisma/client';
 import { createHash } from 'crypto';
 import { sendVerificationRequest, sendWelcomeEmail } from './email';
 
+// Type definitions for Prisma includes
+interface MembershipWithOrg {
+  organization: {
+    id: string;
+    slug: string;
+  };
+  role: string;
+}
+
+interface OrgRoleWithDetails {
+  organization: {
+    id: string;
+  };
+  role: {
+    id: string;
+    name: string;
+    permissions: string;
+  };
+}
+
 const prisma = new PrismaClient();
 
 function hashPassword(password: string): string {
@@ -134,7 +154,7 @@ export const authOptions: NextAuthOptions = {
           },
         });
         
-        token.organizations = memberships.map((m) => ({
+        token.organizations = (memberships as MembershipWithOrg[]).map((m) => ({
           id: m.organization.id,
           slug: m.organization.slug,
           role: m.role,
@@ -149,7 +169,7 @@ export const authOptions: NextAuthOptions = {
           },
         });
         
-        token.orgRoles = orgRoles.map((r) => ({
+        token.orgRoles = (orgRoles as OrgRoleWithDetails[]).map((r) => ({
           organizationId: r.organization.id,
           roleId: r.role.id,
           roleName: r.role.name,
