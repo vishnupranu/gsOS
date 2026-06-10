@@ -1,0 +1,42 @@
+{
+  "name": "@ai-os/ui",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./primitives": "./src/primitives/index.ts",
+    "./advanced": "./src/advanced/index.ts",
+    "./layouts": "./src/layouts/index.ts"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "dependencies": {
+    "@ai-os/design-system": "workspace:*",
+    "@ai-os/shared": "workspace:*",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.460.0",
+    "react-markdown": "^9.0.0",
+    "react-syntax-highlighter": "^15.5.0",
+    "rehype-highlight": "^7.0.0",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.0",
+    "tailwind-merge": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-syntax-highlighter": "^15.5.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

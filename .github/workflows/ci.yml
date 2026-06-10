@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aios_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Start services
+        run: docker-compose -f docker-compose.yml up -d postgres redis
+      - name: Wait for services
+        run: sleep 10
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aios_test
+      - name: Run E2E tests
+        run: pnpm test:e2e
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aios_test
+          REDIS_URL: redis://localhost:6379
+      - name: Stop services
+        if: always()
+        run: docker-compose -f docker-compose.yml down

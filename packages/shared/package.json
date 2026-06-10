@@ -1,0 +1,24 @@
+{
+  "name": "@ai-os/shared",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types/index.ts",
+    "./utils": "./src/utils/index.ts",
+    "./constants": "./src/constants/index.ts",
+    "./validators": "./src/validators/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@ai-os/config": "workspace:*",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}

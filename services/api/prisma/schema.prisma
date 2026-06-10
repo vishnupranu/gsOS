@@ -1,0 +1,768 @@
+// Prisma Schema for AI OS
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  avatar        String?
+  password      String?
+  role          UserRole  @default(MEMBER)
+  status        UserStatus @default(ACTIVE)
+  emailVerified DateTime?
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?
+  
+  // OAuth
+  googleId      String?   @unique
+  githubId      String?   @unique
+  microsoftId   String?
+  
+  // Relations
+  organization   Organization?   @relation(fields: [organizationId], references: [id])
+  organizationId String?
+  
+  sessions       Session[]
+  conversations  Conversation[]
+  agents         Agent[]
+  workflows      Workflow[]
+  files          File[]
+  documents      Document[]
+  apiKeys        APIKey[]
+  auditLogs      AuditLog[]
+  usageRecords   UsageRecord[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  logo        String?
+  plan        SubscriptionPlan @default(FREE)
+  status      OrganizationStatus @default(ACTIVE)
+  
+  // Settings
+  defaultModel String?   @map("default_model")
+  maxTokensPerDay Int?   @map("max_tokens_per_day")
+  allowedDomains String[] @map("allowed_domains")
+  ssoEnabled     Boolean @default(false) @map("sso_enabled")
+  mfaRequired    Boolean @default(false) @map("mfa_required")
+  ipWhitelist    String[] @map("ip_whitelist")
+  
+  // Relations
+  users          User[]
+  teams          Team[]
+  conversations  Conversation[]
+  agents         Agent[]
+  workflows      Workflow[]
+  documents      Document[]
+  files          File[]
+  apiKeys        APIKey[]
+  subscriptions  Subscription[]
+  usageRecords   UsageRecord[]
+  mcpConnections MCPConnection[]
+  auditLogs      AuditLog[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("organizations")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+
+model Team {
+  id             String  @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      TeamMember[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("teams")
+}
+
+model TeamMember {
+  id      String     @id @default(cuid())
+  teamId  String
+  userId  String
+  role    TeamRole    @default(MEMBER)
+  
+  team    Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  LEAD
+  MEMBER
+  VIEWER
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@map("sessions")
+}
+
+// ============================================
+// Conversations & Messages
+// ============================================
+
+model Conversation {
+  id          String   @id @default(cuid())
+  title       String   @default("New Conversation")
+  model       String   @default("gpt-4-turbo")
+  
+  // Context
+  context     Json?
+  
+  // Metadata
+  isPinned    Boolean  @default(false) @map("is_pinned")
+  isArchived  Boolean  @default(false) @map("is_archived")
+  shareCode   String?  @unique @map("share_code")
+  tags        String[]
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  messages     Message[]
+  branches     ConversationBranch[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lastMessageAt DateTime @map("last_message_at") @default(now())
+  
+  @@index([organizationId])
+  @@index([createdById])
+  @@map("conversations")
+}
+
+model ConversationBranch {
+  id          String @id @default(cuid())
+  conversationId String @map("conversation_id")
+  messageId   String @map("message_id")
+  title       String?
+  
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@unique([conversationId, messageId])
+  @@map("conversation_branches")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  role     MessageRole
+  
+  content  String      @db.Text
+  
+  model    String?
+  tokens   Int?
+  
+  // Attachments
+  attachments Json?
+  
+  // Artifacts
+  artifacts Json?
+  
+  // Metadata
+  citations Json?
+  reasoning String?     @db.Text
+  tools     Json?
+  error     String?     @db.Text
+  latency   Int?        // milliseconds
+  
+  conversationId String
+  createdById     String?
+  
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([conversationId])
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+// ============================================
+// Agents
+// ============================================
+
+model Agent {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @db.Text
+  type        AgentType
+  
+  model       String    @default("gpt-4-turbo")
+  prompt      String    @db.Text
+  
+  tools       String[]
+  
+  // Memory
+  memoryType  String?   @map("memory_type") // short-term, long-term, hybrid
+  vectorStore String?  @map("vector_store")
+  retentionDays Int?   @map("retention_days")
+  
+  // Settings
+  temperature Float?
+  maxTokens   Int?
+  topP        Float?
+  frequencyPenalty Float? @map("frequency_penalty")
+  presencePenalty Float? @map("presence_penalty")
+  
+  // Status
+  isActive    Boolean   @default(true) @map("is_active")
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  runs         AgentRun[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@index([organizationId])
+  @@map("agents")
+}
+
+enum AgentType {
+  RESEARCH
+  DEVELOPER
+  DESIGNER
+  MARKETING
+  SEO
+  BROWSER
+  DATA_ANALYST
+  PRODUCT_MANAGER
+}
+
+model AgentRun {
+  id        String   @id @default(cuid())
+  
+  status    AgentRunStatus @default(PENDING)
+  progress  Int      @default(0)
+  
+  input     Json
+  output    Json?
+  error     String?  @db.Text
+  
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  
+  agentId   String
+  
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([agentId])
+  @@map("agent_runs")
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+// ============================================
+// Workflows
+// ============================================
+
+model Workflow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  
+  nodes       Json     // Array of workflow nodes
+  edges       Json     // Array of workflow edges
+  
+  // Trigger
+  triggerType String   @map("trigger_type") // schedule, webhook, event, manual
+  triggerConfig Json   @map("trigger_config")
+  
+  // Settings
+  timeout        Int?  // seconds
+  retryAttempts  Int?  @map("retry_attempts")
+  retryDelay     Int?  @map("retry_delay")
+  concurrency    Int?
+  
+  // Status
+  status     WorkflowStatus @default(DRAFT)
+  version    Int      @default(1)
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  runs         WorkflowRun[]
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lastRunAt DateTime? @map("last_run_at")
+  
+  @@index([organizationId])
+  @@map("workflows")
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+model WorkflowRun {
+  id        String   @id @default(cuid())
+  
+  status    WorkflowRunStatus @default(PENDING)
+  progress  Int      @default(0)
+  
+  input     Json
+  output    Json?
+  error     String?  @db.Text
+  
+  logs      Json?
+  
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  
+  workflowId String
+  
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([workflowId])
+  @@map("workflow_runs")
+}
+
+enum WorkflowRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+// ============================================
+// Documents & Knowledge Base
+// ============================================
+
+model Document {
+  id        String   @id @default(cuid())
+  name      String
+  type      DocumentType
+  
+  url       String?
+  size      Int?
+  
+  // Metadata
+  mimeType  String?  @map("mime_type")
+  source    String?
+  author    String?
+  tags      String[]
+  customFields Json?  @map("custom_fields")
+  
+  // Embedding info
+  vectorId  String?  @map("vector_id")
+  embeddingModel String? @map("embedding_model")
+  chunkCount Int?    @map("chunk_count")
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@index([organizationId])
+  @@map("documents")
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+  CSV
+  XLSX
+  MARKDOWN
+  NOTION
+  CONFLUENCE
+  WEBPAGE
+}
+
+// ============================================
+// MCP Connections
+// ============================================
+
+model MCPConnection {
+  id        String   @id @default(cuid())
+  name      String
+  type      MCPConnectionType
+  
+  // Config (encrypted)
+  apiKey     String? @map("api_key")
+  accessToken String? @map("access_token")
+  refreshToken String? @map("refresh_token")
+  webhookUrl String?  @map("webhook_url")
+  scopes     String[]
+  
+  status    ConnectionStatus @default(DISCONNECTED)
+  
+  lastSyncAt DateTime? @map("last_sync_at")
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@index([organizationId])
+  @@map("mcp_connections")
+}
+
+enum MCPConnectionType {
+  GITHUB
+  NOTION
+  SLACK
+  JIRA
+  LINEAR
+  AIRTABLE
+  SUPABASE
+  POSTGRES
+  GOOGLE_DRIVE
+  FIGMA
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  PENDING
+}
+
+// ============================================
+// Files
+// ============================================
+
+model File {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  size      Int
+  
+  url       String
+  path      String
+  
+  mimeType  String   @map("mime_type")
+  
+  // Metadata
+  width     Int?
+  height    Int?
+  duration  Int?
+  thumbnail String?
+  checksum  String?
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@index([organizationId])
+  @@map("files")
+}
+
+// ============================================
+// API Keys
+// ============================================
+
+model APIKey {
+  id        String   @id @default(cuid())
+  name      String
+  key       String   @unique
+  prefix    String
+  
+  permissions String[]
+  rateLimit  Int?
+  
+  expiresAt DateTime? @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([organizationId])
+  @@map("api_keys")
+}
+
+// ============================================
+// Billing
+// ============================================
+
+model Subscription {
+  id        String   @id @default(cuid())
+  
+  plan      SubscriptionPlan
+  
+  status    SubscriptionStatus @default(ACTIVE)
+  
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd   DateTime @map("current_period_end")
+  cancelAtPeriodEnd  Boolean  @default(false) @map("cancel_at_period_end")
+  
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id")
+  stripeCustomerId     String? @map("stripe_customer_id")
+  
+  // Relations
+  organizationId String @unique
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+model UsageRecord {
+  id        String   @id @default(cuid())
+  
+  type      UsageType
+  
+  quantity  Int
+  cost      Float
+  
+  metadata  Json?
+  
+  organizationId String
+  userId    String?
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([organizationId])
+  @@index([userId])
+  @@map("usage_records")
+}
+
+enum UsageType {
+  TOKENS
+  AGENT_RUNS
+  WORKFLOW_RUNS
+  STORAGE
+  API_CALLS
+  MCP_CALLS
+}
+
+// ============================================
+// Audit Logs
+// ============================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  
+  action    String
+  entityType String  @map("entity_type")
+  entityId   String? @map("entity_id")
+  changes   Json?
+  
+  metadata  Json?
+  
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  
+  organizationId String
+  userId    String?
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([organizationId])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+// ============================================
+// Models Configuration
+// ============================================
+
+model Model {
+  id        String   @id @default(cuid())
+  name      String
+  provider  ModelProvider
+  
+  type      ModelType @default(CHAT)
+  
+  // Capabilities
+  streaming       Boolean @default(true) @map("streaming")
+  functionCalling Boolean @default(false) @map("function_calling")
+  vision          Boolean @default(false)
+  jsonMode       Boolean @default(false) @map("json_mode")
+  
+  // Pricing (per 1M tokens)
+  inputPrice  Float @map("input_price")
+  outputPrice Float @map("output_price")
+  currency    String @default("USD")
+  
+  contextWindow Int    @map("context_window")
+  
+  status    ModelStatus @default(ACTIVE)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("models")
+}
+
+enum ModelProvider {
+  OPENAI
+  ANTHROPIC
+  GOOGLE
+  DEEPSEEK
+  QWEN
+  MISTRAL
+  GROK
+  OPENROUTER
+  OLLAMA
+  LMSTUDIO
+}
+
+enum ModelType {
+  CHAT
+  EMBEDDING
+  VISION
+  AUDIO
+}
+
+enum ModelStatus {
+  ACTIVE
+  INACTIVE
+  DEPRECATED
+}
+
+// ============================================
+// Feature Flags
+// ============================================
+
+model FeatureFlag {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  enabled   Boolean  @default(false)
+  
+  // Per-organization overrides
+  organizationOverrides Json? @map("organization_overrides")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("feature_flags")
+}
